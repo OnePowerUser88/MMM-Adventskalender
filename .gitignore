@@ -1,0 +1,6 @@
+# Ignore images folder
+images/
+
+# Ignore state file (optional - uncomment if you don't want to track state)
+# state.json
+

@@ -1,9 +1,12 @@
 Module.register("MMM-Adventskalender", {
     defaults: {
         backgroundImage: null,
-        doorMargin: 30,
-        moduleWidth: 800,
-        moduleHeight: 600,
+        doorMargin: 20,
+        moduleWidth: 600,
+        moduleHeight: 1000,
+        columns: 4,
+        rows: 6,
+        maxDoorSize: 0.9, // Max door size as fraction of cell (0.9 = 90%)
         autopen: true,
         autoopenat: "00:00"
     },
@@ -24,8 +27,12 @@ Module.register("MMM-Adventskalender", {
 
     getDom() {
         const wrapper = document.createElement("div");
-        wrapper.style.width = `${this.config.moduleWidth}px`;
-        wrapper.style.height = `${this.config.moduleHeight}px`;
+        
+        // Make module responsive to screen width
+        const moduleWidth = Math.min(window.innerWidth || this.config.moduleWidth, this.config.moduleWidth);
+        wrapper.style.width = `${moduleWidth}px`;
+        wrapper.style.maxWidth = "100%";
+        wrapper.style.margin = "0 auto"; // Center horizontally
         wrapper.style.position = "relative";
         wrapper.style.overflow = "hidden";
         wrapper.style.boxShadow = "4px 8px 16px rgba(0, 0, 0, 0.5)";
@@ -36,13 +43,35 @@ Module.register("MMM-Adventskalender", {
             background.src = this.config.backgroundImage;
             background.style.width = "100%";
             background.style.height = "100%";
+            background.style.minWidth = "100%";
+            background.style.minHeight = "100%";
             background.style.objectFit = "cover";
+            background.style.objectPosition = "center center";
             background.style.position = "absolute";
             background.style.left = "0";
             background.style.top = "0";
+            background.style.right = "0";
+            background.style.bottom = "0";
             background.style.zIndex = "0";
             background.style.boxShadow = "4px 8px 16px rgba(0, 0, 0, 0.5)";
+            
+            // Calculate module height based on background image aspect ratio
+            background.onload = () => {
+                if (background.naturalWidth > 0 && background.naturalHeight > 0) {
+                    const bgAspectRatio = background.naturalHeight / background.naturalWidth;
+                    const calculatedHeight = moduleWidth * bgAspectRatio;
+                    wrapper.style.height = `${calculatedHeight}px`;
+                    // Store calculated height for door positioning
+                    this.calculatedHeight = calculatedHeight;
+                }
+            };
+            
+            // Set initial height based on config, will update when image loads
+            wrapper.style.height = `${this.config.moduleHeight}px`;
             wrapper.appendChild(background);
+        } else {
+            // No background - use configured height
+            wrapper.style.height = `${this.config.moduleHeight}px`;
         }
 
         const doors = this.createDoors();
@@ -54,9 +83,21 @@ Module.register("MMM-Adventskalender", {
         const doorsContainer = document.createElement("div");
         doorsContainer.style.position = "relative";
         doorsContainer.style.zIndex = "1";
+        doorsContainer.style.width = "100%";
+        doorsContainer.style.height = "100%";
 
-        const doorWidth = (this.config.moduleWidth - (this.config.doorMargin * 7)) / 6;
-        const doorHeight = (this.config.moduleHeight - (this.config.doorMargin * 5)) / 4;
+        // Return empty container if doorState not loaded yet
+        if (!this.doorState || !this.doorState.numbers) {
+            return doorsContainer;
+        }
+
+        // Get actual module width (responsive)
+        const moduleWidth = Math.min(window.innerWidth || this.config.moduleWidth, this.config.moduleWidth);
+        const moduleHeight = this.calculatedHeight || this.config.moduleHeight || 1000;
+        
+        // Calculate cell size (available space per door)
+        const cellWidth = (moduleWidth - (this.config.doorMargin * (this.config.columns + 1))) / this.config.columns;
+        const cellHeight = (moduleHeight - (this.config.doorMargin * (this.config.rows + 1))) / this.config.rows;
 
         const today = new Date().getDate();
         const [hours, minutes] = this.config.autoopenat.split(":").map(Number);
@@ -66,16 +107,26 @@ Module.register("MMM-Adventskalender", {
         for (let i = 0; i < 24; i++) {
             const door = document.createElement("div");
             door.className = "door";
-            door.style.width = `${doorWidth}px`;
-            door.style.height = `${doorHeight}px`;
 
-            const col = i % 6;
-            const row = Math.floor(i / 6);
+            const col = i % this.config.columns;
+            const row = Math.floor(i / this.config.columns);
 
-            door.style.left = `${col * (doorWidth + this.config.doorMargin) + this.config.doorMargin}px`;
-            door.style.top = `${row * (doorHeight + this.config.doorMargin) + this.config.doorMargin}px`;
+            // Calculate cell position
+            const cellLeft = col * (cellWidth + this.config.doorMargin) + this.config.doorMargin;
+            const cellTop = row * (cellHeight + this.config.doorMargin) + this.config.doorMargin;
+
+            // Set initial door size and position (will be updated when image loads)
+            door.style.width = `${cellWidth}px`;
+            door.style.height = `${cellHeight}px`;
+            door.style.left = `${cellLeft}px`;
+            door.style.top = `${cellTop}px`;
             door.style.position = "absolute";
 
+            // Create door panel for opened state (thin panel on the right)
+            const doorPanel = document.createElement("div");
+            doorPanel.className = "door-panel";
+            doorPanel.style.display = "none"; // Hidden by default
+            
             const number = document.createElement("span");
             number.textContent = this.doorState.numbers[i];
 	    number.classname = "number";
@@ -83,19 +134,104 @@ Module.register("MMM-Adventskalender", {
             number.style.top = "50%";
             number.style.left = "50%";
             number.style.transform = "translate(-50%, -50%)";
-            number.style.fontSize = "1.5rem";
+            number.style.fontSize = "1.2rem";
             number.style.color = "#000";
             door.appendChild(number);
+            
+            // Add number to door panel for opened state
+            const panelNumber = document.createElement("span");
+            panelNumber.textContent = this.doorState.numbers[i];
+            panelNumber.className = "panel-number";
+            doorPanel.appendChild(panelNumber);
+            door.appendChild(doorPanel);
 
             const img = document.createElement("img");
-            img.src = `${this.file("images")}/${String(this.doorState.numbers[i]).padStart(2, "0")}.jpg`;
+            const doorNumber = this.doorState.numbers[i];
+            const doorNumberStr = String(doorNumber).padStart(2, "0");
+            // Try .jpg first, then .jpeg if .jpg doesn't exist
+            const imgPathJpg = `${this.file("images")}/${doorNumberStr}.jpg`;
+            const imgPathJpeg = `${this.file("images")}/${doorNumberStr}.jpeg`;
+            
+            // Function to resize door based on image dimensions
+            const resizeDoor = () => {
+                if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+                    const imgAspectRatio = img.naturalWidth / img.naturalHeight;
+                    const cellAspectRatio = cellWidth / cellHeight;
+                    
+                    // Calculate max dimensions based on config
+                    const maxWidth = cellWidth * (this.config.maxDoorSize || 0.9);
+                    const maxHeight = cellHeight * (this.config.maxDoorSize || 0.9);
+                    
+                    let doorWidth, doorHeight;
+                    
+                    // Size door to fit image aspect ratio within max size
+                    if (imgAspectRatio > cellAspectRatio) {
+                        // Image is wider - fit to max width
+                        doorWidth = maxWidth;
+                        doorHeight = maxWidth / imgAspectRatio;
+                        // Ensure height doesn't exceed max
+                        if (doorHeight > maxHeight) {
+                            doorHeight = maxHeight;
+                            doorWidth = maxHeight * imgAspectRatio;
+                        }
+                    } else {
+                        // Image is taller - fit to max height
+                        doorHeight = maxHeight;
+                        doorWidth = maxHeight * imgAspectRatio;
+                        // Ensure width doesn't exceed max
+                        if (doorWidth > maxWidth) {
+                            doorWidth = maxWidth;
+                            doorHeight = maxWidth / imgAspectRatio;
+                        }
+                    }
+                    
+                    // Center door within cell
+                    const doorLeft = cellLeft + (cellWidth - doorWidth) / 2;
+                    const doorTop = cellTop + (cellHeight - doorHeight) / 2;
+                    
+                    door.style.width = `${doorWidth}px`;
+                    door.style.height = `${doorHeight}px`;
+                    door.style.left = `${doorLeft}px`;
+                    door.style.top = `${doorTop}px`;
+                }
+            };
+            
+            // Track which extension we've tried to prevent infinite loops
+            let triedJpg = false;
+            let triedJpeg = false;
+            
+            // Load image to get its natural dimensions and size door accordingly
+            img.onload = resizeDoor;
+            
+            img.onerror = () => {
+                // Prevent infinite loops - only try each extension once
+                if (triedJpg && triedJpeg) {
+                    // Both extensions failed - image doesn't exist
+                    console.warn(`Image not found for door ${doorNumber}: tried both .jpg and .jpeg`);
+                    // Keep default door size (already set earlier)
+                    return;
+                }
+                
+                // If jpg failed, try jpeg
+                if (triedJpg && !triedJpeg) {
+                    triedJpeg = true;
+                    img.src = imgPathJpeg;
+                }
+                // If we get here and jpg hasn't been tried, it means jpeg failed first, so try jpg
+                else if (triedJpeg && !triedJpg) {
+                    triedJpg = true;
+                    img.src = imgPathJpg;
+                }
+            };
+            
+            // Start by trying jpg first
+            triedJpg = true;
+            img.src = imgPathJpg;
             img.style.width = "100%";
             img.style.height = "100%";
-            img.style.objectFit = "cover";
+            img.style.objectFit = "contain";
             img.style.display = "none";
             door.appendChild(img);
-
-            const doorNumber = this.doorState.numbers[i];
 
         // Open only if autopen is enabled and conditions are met
         if (
@@ -109,56 +245,58 @@ Module.register("MMM-Adventskalender", {
             if (this.doorState.opened[i]) {
                 door.classList.add("opened");
                 img.style.display = "block";
+                // Show door panel with number
+                doorPanel.style.display = "flex";
+                doorPanel.style.visibility = "visible";
+                number.style.visibility = "hidden";
             } else if (doorNumber > today) {
                 door.style.pointerEvents = "none";
             }
 
-door.addEventListener("click", () => {
-    if (door.classList.contains("opened")) {
-        // Close the door manually
-        door.classList.remove("opened");
-        door.classList.add("closing");
-        number.style.visibility = "visible"; // Show the number again
-        img.style.display = "none"; // Hide the image when closing
-    } else if (!door.classList.contains("opening")) {
-        // Open the door if not opening
-        door.classList.add("opening");
-        number.style.visibility = "visible"; // Hide the number during opening
-        img.style.display = "none"; // Show the image during opening
-    }
-        // Update door state and save
-    this.doorState.opened[i] = door.classList.contains("opened");
-    this.sendSocketNotification("SAVE_DOOR_STATE", this.doorState);
-});
+            door.addEventListener("click", () => {
+                if (door.classList.contains("opened")) {
+                    // Close the door manually
+                    door.classList.remove("opened");
+                    door.classList.add("closing");
+                    doorPanel.style.display = "none"; // Hide door panel
+                    number.style.visibility = "visible"; // Show the centered number again
+                    img.style.display = "none"; // Hide the image when closing
+                } else if (!door.classList.contains("opening")) {
+                    // Open the door if not opening
+                    door.classList.add("opening");
+                    number.style.visibility = "hidden"; // Hide centered number
+                    doorPanel.style.display = "flex"; // Show door panel
+                    doorPanel.style.visibility = "visible";
+                    img.style.display = "none"; // Show the image during opening
+                }
+                // Update door state and save
+                this.doorState.opened[i] = door.classList.contains("opened");
+                this.sendSocketNotification("SAVE_DOOR_STATE", this.doorState);
+            });
 
 
 
-door.addEventListener("animationend", (event) => {
-    if (event.animationName === "rotate-door") {
-        if (door.classList.contains("opening")) {
-            img.style.display = "block"; // Show the image
-            number.style.visibility = "hidden"; // Hide the number
-            door.classList.remove("opening");
-            door.classList.add("opened");
-        } else if (door.classList.contains("closing")) {
-            img.style.display = "none"; // Hide the image
-            number.style.visibility = "visible"; // Show the number
-            door.classList.remove("closing");
-            door.classList.remove("opened"); // Fully reset to closed state
-            this.doorState.opened[doorNumber - 1] = false; // Reset opened state
-            this.sendSocketNotification("SAVE_DOOR_STATE", this.doorState); // Save state
-        }
-    }
-});
+            door.addEventListener("animationend", (event) => {
+                if (event.animationName === "rotate-door") {
+                    if (door.classList.contains("opening")) {
+                        img.style.display = "block"; // Show the image
+                        number.style.visibility = "hidden"; // Hide centered number
+                        doorPanel.style.display = "flex"; // Show door panel
+                        doorPanel.style.visibility = "visible";
+                        door.classList.remove("opening");
+                        door.classList.add("opened");
+                    } else if (door.classList.contains("closing")) {
+                        img.style.display = "none"; // Hide the image
+                        doorPanel.style.display = "none"; // Hide door panel
+                        number.style.visibility = "visible"; // Show the number centered
+                        door.classList.remove("closing");
+                        door.classList.remove("opened"); // Fully reset to closed state
+                        this.doorState.opened[doorNumber - 1] = false; // Reset opened state
+                        this.sendSocketNotification("SAVE_DOOR_STATE", this.doorState); // Save state
+                    }
+                }
+            });
 
-	
-	if (this.doorState.opened[i]) {
-	    door.classList.add("opened");
-	    img.style.display = "block";
-	    number.style.visibility = "hidden"; // Keep the number hidden for auto-opened doors
-	} else if (doorNumber > today) {
-	    door.style.pointerEvents = "none";
-	}
             doorsContainer.appendChild(door);
         }
 
@@ -198,11 +336,19 @@ autoOpenDoor() {
         if (door) {
             const number = door.querySelector("span");
             const img = door.querySelector("img");
+            const doorPanel = door.querySelector(".door-panel");
 
             door.classList.add("opened");
             door.classList.add("opening");
 
-            number.style.visibility = "hidden"; // Ensure the number is hidden
+            // Hide centered number and show door panel
+            if (number) {
+                number.style.visibility = "hidden";
+            }
+            if (doorPanel) {
+                doorPanel.style.display = "flex";
+                doorPanel.style.visibility = "visible";
+            }
             if (img) img.style.display = "block"; // Show the image
         }
     }
