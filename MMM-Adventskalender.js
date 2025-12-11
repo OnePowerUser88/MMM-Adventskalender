@@ -8,7 +8,8 @@ Module.register("MMM-Adventskalender", {
         rows: 6,
         maxDoorSize: 0.9, // Max door size as fraction of cell (0.9 = 90%)
         autopen: true,
-        autoopenat: "00:00"
+        autoopenat: "00:00",
+        snowEffect: true // Enable/disable snow effect
     },
 
     start() {
@@ -76,7 +77,51 @@ Module.register("MMM-Adventskalender", {
 
         const doors = this.createDoors();
         wrapper.appendChild(doors);
+        
+        // Add snow effect layer if enabled
+        if (this.config.snowEffect) {
+            const snowContainer = this.createSnowEffect();
+            wrapper.appendChild(snowContainer);
+        }
+        
         return wrapper;
+    },
+    
+    createSnowEffect() {
+        const snowContainer = document.createElement("div");
+        snowContainer.className = "snow-container";
+        snowContainer.style.position = "absolute";
+        snowContainer.style.top = "0";
+        snowContainer.style.left = "0";
+        snowContainer.style.width = "100%";
+        snowContainer.style.height = "100%";
+        snowContainer.style.pointerEvents = "none";
+        snowContainer.style.zIndex = "100";
+        snowContainer.style.overflow = "hidden";
+        
+        // Create multiple snowflakes
+        const snowflakeCount = 50;
+        for (let i = 0; i < snowflakeCount; i++) {
+            const snowflake = document.createElement("div");
+            snowflake.className = "snowflake";
+            snowflake.textContent = "❄";
+            
+            // Randomize position and animation delay
+            const left = Math.random() * 100;
+            const animationDelay = Math.random() * 5;
+            const animationDuration = 10 + Math.random() * 10; // 10-20 seconds
+            const fontSize = 10 + Math.random() * 15; // 10-25px
+            
+            snowflake.style.left = `${left}%`;
+            snowflake.style.animationDelay = `${animationDelay}s`;
+            snowflake.style.animationDuration = `${animationDuration}s`;
+            snowflake.style.fontSize = `${fontSize}px`;
+            snowflake.style.opacity = 0.7 + Math.random() * 0.3; // 0.7-1.0
+            
+            snowContainer.appendChild(snowflake);
+        }
+        
+        return snowContainer;
     },
 
     createDoors() {
