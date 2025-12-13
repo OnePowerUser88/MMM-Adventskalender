@@ -148,6 +148,8 @@ Module.register("MMM-Adventskalender", {
         const [hours, minutes] = this.config.autoopenat.split(":").map(Number);
         const autoopenTime = new Date();
         autoopenTime.setHours(hours, minutes, 0);
+        
+        let stateNeedsSaving = false;
 
         for (let i = 0; i < 24; i++) {
             const door = document.createElement("div");
@@ -284,7 +286,10 @@ Module.register("MMM-Adventskalender", {
             (doorNumber < today || 
             (doorNumber === today && new Date() >= autoopenTime))
         ) {
-            this.doorState.opened[i] = true;
+            if (!this.doorState.opened[i]) {
+                this.doorState.opened[i] = true;
+                stateNeedsSaving = true;
+            }
         }
 
             if (this.doorState.opened[i]) {
@@ -343,6 +348,13 @@ Module.register("MMM-Adventskalender", {
             });
 
             doorsContainer.appendChild(door);
+        }
+        
+        // Save state if any doors were auto-opened on load
+        if (stateNeedsSaving) {
+            setTimeout(() => {
+                this.sendSocketNotification("SAVE_DOOR_STATE", this.doorState);
+            }, 500);
         }
 
         return doorsContainer;
