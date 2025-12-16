@@ -15,11 +15,34 @@ Module.register("MMM-Adventskalender", {
     start() {
         Log.info("Starting module: " + this.name);
         this.doorState = null;
+        this.storageKey = "MMM-Adventskalender-state";
         document.documentElement.style.setProperty("--animation-time", this.config.OpenAnimationTime);
         this.loadDoorState();
         if (this.config.autopen) {
             this.scheduleAutoOpen();
         }
+    },
+    
+    // Save state to localStorage as backup
+    saveStateToLocalStorage(state) {
+        try {
+            localStorage.setItem(this.storageKey, JSON.stringify(state));
+        } catch (e) {
+            console.warn("Could not save to localStorage:", e);
+        }
+    },
+    
+    // Load state from localStorage as fallback
+    loadStateFromLocalStorage() {
+        try {
+            const stored = localStorage.getItem(this.storageKey);
+            if (stored) {
+                return JSON.parse(stored);
+            }
+        } catch (e) {
+            console.warn("Could not load from localStorage:", e);
+        }
+        return null;
     },
 
     getStyles() {
@@ -133,8 +156,13 @@ Module.register("MMM-Adventskalender", {
 
         // Return empty container if doorState not loaded yet
         if (!this.doorState || !this.doorState.numbers) {
+            console.log("MMM-Adventskalender: doorState not loaded yet, returning empty container");
             return doorsContainer;
         }
+        
+        const openedCount = this.doorState.opened.filter(o => o).length;
+        console.log(`MMM-Adventskalender: Creating doors, ${openedCount} doors should be opened`);
+        console.log("MMM-Adventskalender: doorState.opened array:", this.doorState.opened);
 
         // Get actual module width (responsive)
         const moduleWidth = Math.min(window.innerWidth || this.config.moduleWidth, this.config.moduleWidth);
@@ -311,6 +339,9 @@ Module.register("MMM-Adventskalender", {
                     doorPanel.style.display = "none"; // Hide door panel
                     number.style.visibility = "visible"; // Show the centered number again
                     img.style.display = "none"; // Hide the image when closing
+                    // Update state immediately
+                    this.doorState.opened[i] = false;
+                    this.saveState(this.doorState);
                 } else if (!door.classList.contains("opening")) {
                     // Open the door if not opening
                     door.classList.add("opening");
@@ -318,10 +349,10 @@ Module.register("MMM-Adventskalender", {
                     doorPanel.style.display = "flex"; // Show door panel
                     doorPanel.style.visibility = "visible";
                     img.style.display = "none"; // Show the image during opening
+                    // Update state immediately (will be opened after animation)
+                    this.doorState.opened[i] = true;
+                    this.saveState(this.doorState);
                 }
-                // Update door state and save
-                this.doorState.opened[i] = door.classList.contains("opened");
-                this.sendSocketNotification("SAVE_DOOR_STATE", this.doorState);
             });
 
 
@@ -342,7 +373,7 @@ Module.register("MMM-Adventskalender", {
                         door.classList.remove("closing");
                         door.classList.remove("opened"); // Fully reset to closed state
                         this.doorState.opened[doorNumber - 1] = false; // Reset opened state
-                        this.sendSocketNotification("SAVE_DOOR_STATE", this.doorState); // Save state
+                        this.saveState(this.doorState); // Save state
                     }
                 }
             });
@@ -353,7 +384,7 @@ Module.register("MMM-Adventskalender", {
         // Save state if any doors were auto-opened on load
         if (stateNeedsSaving) {
             setTimeout(() => {
-                this.sendSocketNotification("SAVE_DOOR_STATE", this.doorState);
+                this.saveState(this.doorState);
             }, 500);
         }
 
@@ -387,7 +418,7 @@ autoOpenDoor() {
 
     if (doorIndex !== -1 && !this.doorState.opened[doorIndex]) {
         this.doorState.opened[doorIndex] = true; // Mark the door as opened
-        this.sendSocketNotification("SAVE_DOOR_STATE", this.doorState); // Save state
+        this.saveState(this.doorState); // Save state
 
         const door = document.querySelectorAll(".door")[doorIndex];
         if (door) {
@@ -413,13 +444,35 @@ autoOpenDoor() {
 
 
     loadDoorState() {
+        // Try loading from localStorage first as fallback
+        const localState = this.loadStateFromLocalStorage();
+        if (localState && this.doorState === null) {
+            console.log("Loaded state from localStorage as fallback");
+            this.doorState = localState;
+            this.updateDom();
+        }
+        // Always try to load from server (will override localStorage if available)
         this.sendSocketNotification("LOAD_DOOR_STATE");
     },
 
     socketNotificationReceived(notification, payload) {
         if (notification === "DOOR_STATE_LOADED") {
+            const openedCount = payload.opened.filter(o => o).length;
+            console.log(`MMM-Adventskalender: State loaded, ${openedCount} doors opened`);
+            console.log("MMM-Adventskalender: State data:", JSON.stringify(payload.opened));
             this.doorState = payload;
-            this.updateDom();
+            // Also save to localStorage as backup
+            this.saveStateToLocalStorage(payload);
+            // Force DOM update to show opened doors
+            this.updateDom(0);
         }
+    },
+    
+    // Helper to save state (both to server and localStorage)
+    saveState(state) {
+        // Save to server via node_helper
+        this.sendSocketNotification("SAVE_DOOR_STATE", state);
+        // Also save to localStorage as backup
+        this.saveStateToLocalStorage(state);
     }
 });
